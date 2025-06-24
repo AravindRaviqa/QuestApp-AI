@@ -1,0 +1,26 @@
+#!/bin/bash
+# Maven Wrapper for QuestApp Automation
+# This script provides easy access to Maven commands
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAVEN_HOME="$SCRIPT_DIR/apache-maven-3.9.6"
+PATH="$MAVEN_HOME/bin:$PATH"
+
+if [ $# -eq 0 ]; then
+    echo "QuestApp Automation - Maven Wrapper"
+    echo
+    echo "Usage:"
+    echo "  ./mvnw test                    - Run all tests"
+    echo "  ./mvnw clean test              - Clean and run tests"
+    echo "  ./mvnw test -Dtest=LoginTest   - Run specific test"
+    echo "  ./mvnw test -Pchrome-headless  - Run with headless Chrome"
+    echo "  ./mvnw test -Pparallel         - Run tests in parallel"
+    echo "  ./mvnw clean                   - Clean project"
+    echo "  ./mvnw compile                 - Compile project"
+    echo
+    echo "For more options, see README.md"
+    exit 1
+fi
+
+echo "Running: mvn $*"
+exec mvn "$@" 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="QuestApp Automation Suite">
+    <test name="Management Tests">
+        <classes>
+            <class name="com.questapp.tests.ProgramManagementTest"/>
+            <class name="com.questapp.tests.ProjectManagementTest"/>
+            <class name="com.questapp.tests.PhaseManagementTest"/>
+            <class name="com.questapp.tests.OrganisationManagementTest"/>
+            <class name="com.questapp.tests.CentreManagementTest"/>
+            <class name="com.questapp.tests.TradeManagementTest"/>
+            <class name="com.questapp.tests.SubjectManagementTest"/>
+        </classes>
+    </test>
+</suite>

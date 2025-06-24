@@ -1,0 +1,501 @@
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - src/**/*
+    - pom.xml
+    - testng.xml
+
+pr:
+  branches:
+    include:
+    - main
+    - develop
+
+schedules:
+- cron: "0 2 * * *"  # Daily at 2 AM UTC
+  displayName: Daily regression tests
+  branches:
+    include:
+    - main
+  always: true
+
+variables:
+  JAVA_VERSION: '21'
+  MAVEN_VERSION: '3.9.6'
+  TEST_BROWSER: 'chrome'
+  TEST_HEADLESS: 'true'
+  TEST_PARALLEL: 'false'
+
+stages:
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: Build
+    displayName: 'Build and Compile'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean compile
+      displayName: 'Compile project'
+    
+    - script: |
+        ./mvnw clean test-compile
+      displayName: 'Compile tests'
+
+- stage: SmokeTests
+  displayName: 'Smoke Tests'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: SmokeTests
+    displayName: 'Run Smoke Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - task: ChromeInstaller@1
+      displayName: 'Install Chrome'
+      inputs:
+        chromeVersion: 'latest'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean test -Psmoke -Dtest.headless=true
+      displayName: 'Run Smoke Tests'
+      continueOnError: true
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish TestNG Results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        mergeTestResults: true
+        testRunTitle: 'Smoke Tests'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Reports'
+      inputs:
+        PathtoPublish: 'test-output'
+        ArtifactName: 'smoke-test-reports'
+        publishLocation: 'Container'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Surefire Reports'
+      inputs:
+        PathtoPublish: 'target/surefire-reports'
+        ArtifactName: 'smoke-surefire-reports'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: IntegrationTests
+  displayName: 'Integration Tests'
+  dependsOn: SmokeTests
+  condition: succeeded()
+  jobs:
+  - deployment: ChromeTests
+    displayName: 'Chrome Integration Tests'
+    environment: 'integration'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: Cache@2
+            displayName: 'Cache Maven dependencies'
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+              path: $(MAVEN_CACHE_FOLDER)
+          
+          - task: JavaToolInstaller@0
+            displayName: 'Install Java'
+            inputs:
+              versionSpec: $(JAVA_VERSION)
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+          
+          - task: ChromeInstaller@1
+            displayName: 'Install Chrome'
+            inputs:
+              chromeVersion: 'latest'
+          
+          - script: |
+              chmod +x mvnw
+              ./mvnw clean test -Pchrome -Dtest.headless=true
+            displayName: 'Run Chrome Integration Tests'
+            continueOnError: true
+          
+          - task: PublishTestResults@2
+            displayName: 'Publish TestNG Results'
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/TEST-*.xml'
+              mergeTestResults: true
+              testRunTitle: 'Chrome Integration Tests'
+            condition: always()
+  
+  - deployment: HeadlessChromeTests
+    displayName: 'Headless Chrome Integration Tests'
+    environment: 'integration'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: Cache@2
+            displayName: 'Cache Maven dependencies'
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+              path: $(MAVEN_CACHE_FOLDER)
+          
+          - task: JavaToolInstaller@0
+            displayName: 'Install Java'
+            inputs:
+              versionSpec: $(JAVA_VERSION)
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+          
+          - task: ChromeInstaller@1
+            displayName: 'Install Chrome'
+            inputs:
+              chromeVersion: 'latest'
+          
+          - script: |
+              chmod +x mvnw
+              ./mvnw clean test -Pchrome-headless -Dtest.headless=true
+            displayName: 'Run Headless Chrome Integration Tests'
+            continueOnError: true
+          
+          - task: PublishTestResults@2
+            displayName: 'Publish TestNG Results'
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/TEST-*.xml'
+              mergeTestResults: true
+              testRunTitle: 'Headless Chrome Integration Tests'
+            condition: always()
+
+- stage: ParallelTests
+  displayName: 'Parallel Tests'
+  dependsOn: SmokeTests
+  condition: succeeded()
+  jobs:
+  - job: ParallelTests
+    displayName: 'Run Parallel Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - task: ChromeInstaller@1
+      displayName: 'Install Chrome'
+      inputs:
+        chromeVersion: 'latest'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean test -Pparallel -Dtest.headless=true
+      displayName: 'Run Parallel Tests'
+      continueOnError: true
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish TestNG Results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        mergeTestResults: true
+        testRunTitle: 'Parallel Tests'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Reports'
+      inputs:
+        PathtoPublish: 'test-output'
+        ArtifactName: 'parallel-test-reports'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: RegressionTests
+  displayName: 'Regression Tests'
+  dependsOn: [IntegrationTests, ParallelTests]
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: RegressionTests
+    displayName: 'Run Regression Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - task: ChromeInstaller@1
+      displayName: 'Install Chrome'
+      inputs:
+        chromeVersion: 'latest'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean test -Pregression -Dtest.headless=true
+      displayName: 'Run Regression Tests'
+      continueOnError: true
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish TestNG Results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        mergeTestResults: true
+        testRunTitle: 'Regression Tests'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Reports'
+      inputs:
+        PathtoPublish: 'test-output'
+        ArtifactName: 'regression-test-reports'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: SecurityTests
+  displayName: 'Security Tests'
+  dependsOn: SmokeTests
+  condition: succeeded()
+  jobs:
+  - job: SecurityTests
+    displayName: 'Run Security Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - task: ChromeInstaller@1
+      displayName: 'Install Chrome'
+      inputs:
+        chromeVersion: 'latest'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean test -Dtest=SecurityTest -Dtest.headless=true
+      displayName: 'Run Security Tests'
+      continueOnError: true
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish TestNG Results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        mergeTestResults: true
+        testRunTitle: 'Security Tests'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Reports'
+      inputs:
+        PathtoPublish: 'test-output'
+        ArtifactName: 'security-test-reports'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: PerformanceTests
+  displayName: 'Performance Tests'
+  dependsOn: SmokeTests
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: PerformanceTests
+    displayName: 'Run Performance Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - task: ChromeInstaller@1
+      displayName: 'Install Chrome'
+      inputs:
+        chromeVersion: 'latest'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean test -Dtest=PerformanceTest -Dtest.headless=true
+      displayName: 'Run Performance Tests'
+      continueOnError: true
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish TestNG Results'
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        mergeTestResults: true
+        testRunTitle: 'Performance Tests'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Test Reports'
+      inputs:
+        PathtoPublish: 'test-output'
+        ArtifactName: 'performance-test-reports'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: AllureReport
+  displayName: 'Generate Allure Report'
+  dependsOn: [IntegrationTests, ParallelTests, RegressionTests]
+  condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.SourceBranch'], 'refs/heads/develop')))
+  jobs:
+  - job: AllureReport
+    displayName: 'Generate Allure Report'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - task: Cache@2
+      displayName: 'Cache Maven dependencies'
+      inputs:
+        key: 'maven | "$(Agent.OS)" | **/pom.xml'
+        restoreKeys: |
+          maven | "$(Agent.OS)"
+        path: $(MAVEN_CACHE_FOLDER)
+    
+    - task: JavaToolInstaller@0
+      displayName: 'Install Java'
+      inputs:
+        versionSpec: $(JAVA_VERSION)
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    
+    - script: |
+        chmod +x mvnw
+        ./mvnw allure:report
+      displayName: 'Generate Allure Report'
+      continueOnError: true
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Allure Report'
+      inputs:
+        PathtoPublish: 'target/allure-report'
+        ArtifactName: 'allure-report'
+        publishLocation: 'Container'
+      condition: always()
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Allure Results'
+      inputs:
+        PathtoPublish: 'target/allure-results'
+        ArtifactName: 'allure-results'
+        publishLocation: 'Container'
+      condition: always()
+
+- stage: Cleanup
+  displayName: 'Cleanup'
+  dependsOn: [AllureReport, SecurityTests, PerformanceTests]
+  condition: always()
+  jobs:
+  - job: Cleanup
+    displayName: 'Cleanup Workspace'
+    pool:
+      vmImage: 'ubuntu-latest'
+    
+    steps:
+    - script: |
+        chmod +x mvnw
+        ./mvnw clean
+      displayName: 'Clean Maven'
+    
+    - script: |
+        find screenshots -name "*.png" -mtime +7 -delete
+        find test-output -name "*.html" -mtime +7 -delete
+      displayName: 'Clean Old Files' 

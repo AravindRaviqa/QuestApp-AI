@@ -1,0 +1,349 @@
+# GitLab CI/CD Pipeline for QuestApp Automation
+# Uses Maven profiles for different test scenarios
+
+stages:
+  - build
+  - smoke
+  - integration
+  - parallel
+  - regression
+  - security
+  - performance
+  - report
+  - cleanup
+
+variables:
+  JAVA_VERSION: "21"
+  MAVEN_VERSION: "3.9.6"
+  TEST_BROWSER: "chrome"
+  TEST_HEADLESS: "true"
+  TEST_PARALLEL: "false"
+  
+  # Cache configuration
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  CACHE_KEY: "$CI_COMMIT_REF_SLUG-$CI_PROJECT_PATH"
+
+# Global before_script
+before_script:
+  - chmod +x mvnw
+  - export MAVEN_OPTS="-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+# Build stage
+build:
+  stage: build
+  image: openjdk:21-jdk
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean compile
+    - ./mvnw clean test-compile
+  artifacts:
+    paths:
+      - target/classes/
+      - target/test-classes/
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Smoke Tests
+smoke-tests:
+  stage: smoke
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Psmoke -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Integration Tests - Chrome
+integration-tests-chrome:
+  stage: integration
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Pchrome -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+  dependencies:
+    - smoke-tests
+
+# Integration Tests - Headless Chrome
+integration-tests-headless:
+  stage: integration
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Pchrome-headless -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+  dependencies:
+    - smoke-tests
+
+# Parallel Tests
+parallel-tests:
+  stage: parallel
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Pparallel -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+  dependencies:
+    - smoke-tests
+
+# Regression Tests
+regression-tests:
+  stage: regression
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Pregression -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 2 weeks
+  only:
+    - main
+  dependencies:
+    - integration-tests-chrome
+    - integration-tests-headless
+    - parallel-tests
+  when: manual
+  allow_failure: true
+
+# Security Tests
+security-tests:
+  stage: security
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Dtest=SecurityTest -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+  dependencies:
+    - smoke-tests
+  allow_failure: true
+
+# Performance Tests
+performance-tests:
+  stage: performance
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Dtest=PerformanceTest -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 1 week
+  only:
+    - main
+  dependencies:
+    - smoke-tests
+  allow_failure: true
+
+# Generate Allure Report
+allure-report:
+  stage: report
+  image: openjdk:21-jdk
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw allure:report
+  artifacts:
+    paths:
+      - target/allure-report/
+      - target/allure-results/
+    expire_in: 1 month
+  only:
+    - main
+    - develop
+  dependencies:
+    - integration-tests-chrome
+    - integration-tests-headless
+    - parallel-tests
+    - regression-tests
+    - security-tests
+    - performance-tests
+
+# Cleanup
+cleanup:
+  stage: cleanup
+  image: openjdk:21-jdk
+  script:
+    - ./mvnw clean
+    - find screenshots -name "*.png" -mtime +7 -delete
+    - find test-output -name "*.html" -mtime +7 -delete
+  only:
+    - main
+    - develop
+  when: always
+  allow_failure: true
+
+# Scheduled Regression Tests (Daily at 2 AM UTC)
+scheduled-regression:
+  stage: regression
+  image: openjdk:21-jdk
+  services:
+    - name: selenium/standalone-chrome:latest
+      alias: chrome
+  variables:
+    SELENIUM_HOST: chrome
+    SELENIUM_PORT: 4444
+  cache:
+    key: "$CACHE_KEY"
+    paths:
+      - .m2/repository/
+  script:
+    - ./mvnw clean test -Pregression -Dtest.headless=true
+  artifacts:
+    paths:
+      - test-output/
+      - target/surefire-reports/
+      - screenshots/
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+    expire_in: 2 weeks
+  only:
+    - schedules
+  allow_failure: true
+
+# Pipeline configuration
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+# Global after_script for notifications
+after_script:
+  - |
+    if [ $CI_JOB_STATUS == "success" ]; then
+      echo "✅ Job $CI_JOB_NAME completed successfully!"
+    elif [ $CI_JOB_STATUS == "failed" ]; then
+      echo "❌ Job $CI_JOB_NAME failed!"
+      echo "🔍 Check the test reports for details"
+    fi 
