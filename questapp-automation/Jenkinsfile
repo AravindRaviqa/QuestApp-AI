@@ -1,216 +1,154 @@
 pipeline {
     agent any
-    
+
     tools {
         maven 'Maven-3.9.10'
         jdk 'JDK-21'
     }
-    
+
     environment {
         JAVA_HOME = tool('JDK-21')
         MAVEN_HOME = tool('Maven-3.9.10')
-        PATH = "${MAVEN_HOME}/bin:${JAVA_HOME}/bin:${PATH}"
-        
-        // Test configuration
+        PATH = "${MAVEN_HOME}\\bin;${JAVA_HOME}\\bin;${env.PATH}"
+
         TEST_BROWSER = 'chrome'
         TEST_HEADLESS = 'true'
         TEST_PARALLEL = 'false'
-        
-        // Artifact paths
-        TEST_REPORTS = 'test-output/'
-        SUREFIRE_REPORTS = 'target/surefire-reports/'
-        ALLURE_RESULTS = 'target/allure-results/'
-        ALLURE_REPORT = 'target/allure-report/'
-        
-        // Notification settings
+
+        TEST_REPORTS = 'test-output\\'
+        SUREFIRE_REPORTS = 'target\\surefire-reports\\'
+        ALLURE_RESULTS = 'target\\allure-results\\'
+        ALLURE_REPORT = 'target\\allure-report\\'
+
         SLACK_CHANNEL = '#automation'
         EMAIL_RECIPIENTS = 'aravind.ravi@focaloid.com'
     }
-    
+
     options {
         timeout(time: 2, unit: 'HOURS')
         timestamps()
         ansiColor('xterm')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
-    
+
     triggers {
-        // Run regression tests daily at 2 AM
         cron('0 2 * * *')
     }
-    
+
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
-                sh 'chmod +x mvnw'
             }
         }
-        
-        stage('Setup Environment') {
+
+        stage('Init Java') {
             steps {
-                script {
-                    // Setup Chrome for headless testing
-                    sh '''
-                        # Install Chrome dependencies
-                        sudo apt-get update
-                        sudo apt-get install -y wget gnupg2
-                        
-                        # Install Chrome
-                        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-                        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-                        sudo apt-get update
-                        sudo apt-get install -y google-chrome-stable
-                        
-                        # Verify Chrome installation
-                        google-chrome --version
-                    '''
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    java -version
+                    mvn -version
+                '''
             }
         }
-        
+
         stage('Code Quality') {
             parallel {
                 stage('Compile') {
                     steps {
-                        sh './mvnw clean compile'
+                        bat '''
+                            set JAVA_HOME=%JAVA_HOME%
+                            set PATH=%JAVA_HOME%\\bin;%PATH%
+                            .\\mvnw.cmd clean compile
+                        '''
                     }
                 }
-                
                 stage('Static Analysis') {
                     steps {
-                        sh './mvnw clean compile test-compile'
+                        bat '''
+                            set JAVA_HOME=%JAVA_HOME%
+                            set PATH=%JAVA_HOME%\\bin;%PATH%
+                            .\\mvnw.cmd clean compile test-compile
+                        '''
                     }
                 }
             }
         }
-        
+
         stage('Smoke Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                    changeRequest()
-                }
-            }
             steps {
-                script {
-                    try {
-                        sh './mvnw clean test -Psmoke -Dtest.headless=true'
-                    } catch (Exception e) {
-                        echo "Smoke tests failed: ${e.getMessage()}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean test -Psmoke -Dtest.headless=true
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Smoke Test Report'
                     ])
-                    
-                    publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'target/surefire-reports',
-                        reportFiles: 'index.html',
-                        reportName: 'Smoke Surefire Report'
-                    ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Integration Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
             parallel {
                 stage('Chrome Tests') {
                     steps {
-                        script {
-                            try {
-                                sh './mvnw clean test -Pchrome -Dtest.headless=true'
-                            } catch (Exception e) {
-                                echo "Chrome integration tests failed: ${e.getMessage()}"
-                                currentBuild.result = 'UNSTABLE'
-                            }
-                        }
+                        bat '''
+                            set JAVA_HOME=%JAVA_HOME%
+                            set PATH=%JAVA_HOME%\\bin;%PATH%
+                            .\\mvnw.cmd clean test -Pchrome -Dtest.headless=true
+                        '''
                     }
                 }
-                
                 stage('Headless Chrome Tests') {
                     steps {
-                        script {
-                            try {
-                                sh './mvnw clean test -Pchrome-headless -Dtest.headless=true'
-                            } catch (Exception e) {
-                                echo "Headless Chrome integration tests failed: ${e.getMessage()}"
-                                currentBuild.result = 'UNSTABLE'
-                            }
-                        }
+                        bat '''
+                            set JAVA_HOME=%JAVA_HOME%
+                            set PATH=%JAVA_HOME%\\bin;%PATH%
+                            .\\mvnw.cmd clean test -Pchrome-headless -Dtest.headless=true
+                        '''
                     }
                 }
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Integration Test Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Parallel Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
             steps {
-                script {
-                    try {
-                        sh './mvnw clean test -Pparallel -Dtest.headless=true'
-                    } catch (Exception e) {
-                        echo "Parallel tests failed: ${e.getMessage()}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean test -Pparallel -Dtest.headless=true
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Parallel Test Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Regression Tests') {
             when {
                 anyOf {
@@ -219,188 +157,117 @@ pipeline {
                 }
             }
             steps {
-                script {
-                    try {
-                        sh './mvnw clean test -Pregression -Dtest.headless=true'
-                    } catch (Exception e) {
-                        echo "Regression tests failed: ${e.getMessage()}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean test -Pregression -Dtest.headless=true
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Regression Test Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Security Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
             steps {
-                script {
-                    try {
-                        sh './mvnw clean test -Dtest=SecurityTest -Dtest.headless=true'
-                    } catch (Exception e) {
-                        echo "Security tests failed: ${e.getMessage()}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean test -Dtest=SecurityTest -Dtest.headless=true
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Security Test Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Performance Tests') {
             when {
                 branch 'main'
             }
             steps {
-                script {
-                    try {
-                        sh './mvnw clean test -Dtest=PerformanceTest -Dtest.headless=true'
-                    } catch (Exception e) {
-                        echo "Performance tests failed: ${e.getMessage()}"
-                        currentBuild.result = 'UNSTABLE'
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean test -Dtest=PerformanceTest -Dtest.headless=true
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'test-output',
                         reportFiles: 'index.html',
                         reportName: 'Performance Test Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Generate Allure Report') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'develop'
-                }
-            }
             steps {
-                script {
-                    try {
-                        sh './mvnw allure:report'
-                    } catch (Exception e) {
-                        echo "Allure report generation failed: ${e.getMessage()}"
-                    }
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd allure:report
+                '''
             }
             post {
                 always {
                     publishHTML([
-                        allowMissing: false,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
                         reportDir: 'target/allure-report',
                         reportFiles: 'index.html',
                         reportName: 'Allure Report'
                     ])
-                    
                     archiveArtifacts artifacts: "${ALLURE_RESULTS}**, ${ALLURE_REPORT}**", allowEmptyArchive: true
                 }
             }
         }
-        
+
         stage('Cleanup') {
             steps {
-                script {
-                    // Clean up workspace
-                    sh './mvnw clean'
-                    
-                    // Remove screenshots older than 7 days
-                    sh 'find screenshots -name "*.png" -mtime +7 -delete'
-                    
-                    // Remove test output older than 7 days
-                    sh 'find test-output -name "*.html" -mtime +7 -delete'
-                }
+                bat '''
+                    set JAVA_HOME=%JAVA_HOME%
+                    set PATH=%JAVA_HOME%\\bin;%PATH%
+                    .\\mvnw.cmd clean
+                '''
             }
         }
     }
-    
+
     post {
         always {
-            // Archive all test reports
             archiveArtifacts artifacts: "${TEST_REPORTS}**, ${SUREFIRE_REPORTS}**, ${ALLURE_RESULTS}**, ${ALLURE_REPORT}**", allowEmptyArchive: true
-            
-            // Clean workspace
             cleanWs()
+
+            // Mail notifications are disabled until SMTP is configured
+            // mail to: "${EMAIL_RECIPIENTS}", subject: "QuestApp Pipeline - ${currentBuild.currentResult}", body: "Build completed with result: ${currentBuild.currentResult}"
         }
-        
+
         success {
-            script {
-                echo "✅ Pipeline completed successfully!"
-                echo "📊 Test reports available in artifacts"
-                
-                // Send success notification
-                if (env.BRANCH_NAME == 'main') {
-                    // Slack notification for main branch
-                    // slackSend channel: env.SLACK_CHANNEL, color: 'good', message: "✅ QuestApp Automation Pipeline SUCCESS - Branch: ${env.BRANCH_NAME}"
-                    
-                    // Email notification
-                    // emailext subject: "QuestApp Automation - SUCCESS", body: "Pipeline completed successfully on branch ${env.BRANCH_NAME}", to: env.EMAIL_RECIPIENTS
-                }
-            }
+            echo "✅ Pipeline completed successfully!"
         }
-        
+
         failure {
-            script {
-                echo "❌ Pipeline failed!"
-                echo "🔍 Check the test reports in artifacts for details"
-                
-                // Send failure notification
-                // slackSend channel: env.SLACK_CHANNEL, color: 'danger', message: "❌ QuestApp Automation Pipeline FAILED - Branch: ${env.BRANCH_NAME}"
-                
-                // Email notification
-                // emailext subject: "QuestApp Automation - FAILED", body: "Pipeline failed on branch ${env.BRANCH_NAME}. Check Jenkins for details.", to: env.EMAIL_RECIPIENTS
-            }
+            echo "❌ Pipeline failed! Check the reports for details."
         }
-        
+
         unstable {
-            script {
-                echo "⚠️ Pipeline completed with warnings!"
-                echo "🔍 Some tests failed, check reports for details"
-                
-                // Send unstable notification
-                // slackSend channel: env.SLACK_CHANNEL, color: 'warning', message: "⚠️ QuestApp Automation Pipeline UNSTABLE - Branch: ${env.BRANCH_NAME}"
-            }
+            echo "⚠️ Pipeline is unstable. Some tests may have failed."
         }
     }
-} 
+}
