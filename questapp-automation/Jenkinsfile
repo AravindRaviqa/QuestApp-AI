@@ -2,13 +2,13 @@ pipeline {
     agent any
     
     tools {
-        maven 'Maven-3.9.6'
+        maven 'Maven-3.9.10'
         jdk 'JDK-21'
     }
     
     environment {
         JAVA_HOME = tool('JDK-21')
-        MAVEN_HOME = tool('Maven-3.9.6')
+        MAVEN_HOME = tool('Maven-3.9.10')
         PATH = "${MAVEN_HOME}/bin:${JAVA_HOME}/bin:${PATH}"
         
         // Test configuration
@@ -24,7 +24,7 @@ pipeline {
         
         // Notification settings
         SLACK_CHANNEL = '#automation'
-        EMAIL_RECIPIENTS = 'team@questapp.com'
+        EMAIL_RECIPIENTS = 'aravind.ravi@focaloid.com'
     }
     
     options {
